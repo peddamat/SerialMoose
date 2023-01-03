@@ -23,19 +23,19 @@ void setup() {
 }
 
 void loop() {
-  if (SniffRX.available()) {      
+  if (SniffRX.peek() != -1) {      
     DebugConsole.write("RX: ");
     while (SniffRX.available()) {      
       DebugConsole.write(SniffRX.read());
     }
-    DebugConsole.write("\n");
   }
 
-  if (SniffTX.available()) {    
+  if (SniffTX.peek() != -1) {    
     DebugConsole.write("TX: ");
     while (SniffTX.available()) {      
       DebugConsole.write(SniffTX.read());   
     }
-    DebugConsole.write("\n");
   }
+
+  delay(1000);
 }
