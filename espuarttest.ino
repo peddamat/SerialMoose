@@ -23,5 +23,19 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  if (SniffRX.available()) {      
+    DebugConsole.write("RX: ");
+    while (SniffRX.available()) {      
+      DebugConsole.write(SniffRX.read());
+    }
+    DebugConsole.write("\n");
+  }
+
+  if (SniffTX.available()) {    
+    DebugConsole.write("TX: ");
+    while (SniffTX.available()) {      
+      DebugConsole.write(SniffTX.read());   
+    }
+    DebugConsole.write("\n");
+  }
 }
