@@ -3,6 +3,8 @@ HardwareSerial &DebugConsole = Serial;
 HardwareSerial &SniffRX = Serial1;
 HardwareSerial &SniffTX = Serial2;
 
+int counter = 0;
+
 void setup() {
 
   DebugConsole.begin(115200);
@@ -24,20 +26,25 @@ void setup() {
 
 void loop() {
   if (SniffRX.peek() != -1) {      
-    DebugConsole.write("-> ");
+    // DebugConsole.write("-> ");
+    DebugConsole.printf("%09d -> ", counter);
     while (SniffRX.available()) {      
-      DebugConsole.write(SniffRX.read());
+      // DebugConsole.print(SniffRX.read(), HEX);
+      DebugConsole.printf("%02x ", SniffRX.read());
     }
     DebugConsole.write("\n");
   }
 
   if (SniffTX.peek() != -1) {    
-    DebugConsole.write("<- ");
+    // DebugConsole.write("<- ");
+    DebugConsole.printf("%09d <- ", counter);
     while (SniffTX.available()) {      
-      DebugConsole.write(SniffTX.read());   
+      // DebugConsole.print(SniffTX.read(), HEX);
+      DebugConsole.printf("%02x ", SniffTX.read());
     }
     DebugConsole.write("\n");
   }
 
-  delay(1000);
+  delay(100);
+  counter++;
 }
