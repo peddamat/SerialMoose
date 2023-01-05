@@ -60,10 +60,15 @@ int badArgCount(char *cmdName) {
     return -1;
 }
 
+/*
+ * setup_sniffer(rx_pin, tx_pin, baud_rate)
+ */
 int setup_sniffer(int argc, char **argv) {
     if (argc == 4) {
+        // Grab baud rate
         int baud = atoi(argv[3]);
 
+        // Setup RX pin
         int pin = atoi(argv[1]);
         if (pin < 0 || pin > (int)NUM_DIGITAL_PINS) {
             shell.print(F("Invalid RX pin: "));
@@ -73,9 +78,9 @@ int setup_sniffer(int argc, char **argv) {
         SniffRX.begin(baud, SERIAL_8N1, pin, 33, false, 11000UL);
         DebugConsole.println("Initialized RX Line.");
 
-        // Arduino runs on core 1 by default
         xTaskCreatePinnedToCore(rx_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL, 0);
 
+        // Setup TX pin
         pin = atoi(argv[2]);
         if (pin < 0 || pin > (int)NUM_DIGITAL_PINS) {
             shell.print(F("Invalid TX pin: "));
@@ -85,7 +90,6 @@ int setup_sniffer(int argc, char **argv) {
         SniffTX.begin(baud, SERIAL_8N1, pin, 32, false, 11000UL);
         DebugConsole.println("Initialized TX Line.");
 
-        // Arduino runs on core 1 by default
         xTaskCreatePinnedToCore(tx_task, "uart_tx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL, 0);
 
         return EXIT_SUCCESS;
@@ -94,6 +98,9 @@ int setup_sniffer(int argc, char **argv) {
     return badArgCount(argv[0]);
 }
 
+/*
+ * detect_baud(on_pin)
+ */
 int detect_baud(int argc, char **argv) {
     if (argc == 2) {
         int pin = atoi(argv[1]);
@@ -137,6 +144,7 @@ static void rx_task(void *arg) {
     static const char *RX_TASK_TAG = "RX";
     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
     uint8_t *data = (uint8_t *)malloc(RX_BUF_SIZE + 1);
+
     while (1) {
         const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
         if (rxBytes > 0) {
@@ -144,6 +152,7 @@ static void rx_task(void *arg) {
             ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_ERROR);
         }
     }
+
     free(data);
 }
 
@@ -151,6 +160,7 @@ static void tx_task(void *arg) {
     static const char *TX_TASK_TAG = "TX";
     esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
     uint8_t *data = (uint8_t *)malloc(RX_BUF_SIZE + 1);
+
     while (1) {
         const int txBytes = uart_read_bytes(UART_NUM_2, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
         if (txBytes > 0) {
@@ -158,6 +168,7 @@ static void tx_task(void *arg) {
             ESP_LOG_BUFFER_HEXDUMP(TX_TASK_TAG, data, txBytes, ESP_LOG_ERROR);
         }
     }
+
     free(data);
 }
 
