@@ -25,7 +25,7 @@ void BTAuthCompleteCallback(boolean success)
   }
 }
 
-// Modified from esp32/Print.cpp.  
+// Modified from esp32/Print.cpp.
 static int debug_vprintf(const char *format, va_list ap) {
 
     char loc_buf[64];
@@ -35,7 +35,7 @@ static int debug_vprintf(const char *format, va_list ap) {
     if(len < 0) {
         return 0;
     };
-    if(len >= (int)sizeof(loc_buf)){  
+    if(len >= (int)sizeof(loc_buf)){
         temp = (char*) malloc(len+1);
         if(temp == NULL) {
             return 0;

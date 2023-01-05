@@ -15,13 +15,13 @@ BluetoothSerial DebugConsole;
 HardwareSerial &DebugConsole = Serial;
 #endif
 
-  
+
 #ifdef DEBUG_OVER_BLUETOOTH
 void setup_debug_console() {
   DebugConsole.enableSSP();
   DebugConsole.onConfirmRequest(BTConfirmRequestCallback);
   DebugConsole.onAuthComplete(BTAuthCompleteCallback);
-  DebugConsole.begin("SerialMoose"); 
+  DebugConsole.begin("SerialMoose");
 
   // TODO: Remove this after debugging...
   Serial.begin(9600);
@@ -110,7 +110,7 @@ void setup() {
   shell.addCommand(F("setup rx_pin tx_pin baud_rate"), setup_sniffer);
   shell.addCommand(F("detect_baud pin"), detect_baud);
 
-  // Configure ESP-IDF logger 
+  // Configure ESP-IDF logger
   esp_log_set_vprintf(debug_vprintf);
 
   // TODO: Check what the stack depth actually needs to be...
