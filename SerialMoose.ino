@@ -1,4 +1,7 @@
 #include "Bluetooth.h"
+#include "driver/uart.h"
+
+static const int RX_BUF_SIZE = 1024;
 
 // Define sniffer lines
 HardwareSerial &SniffRX = Serial1;
@@ -28,11 +31,87 @@ void setup_debug_console() {
 }
 #endif
 
+// Modified from esp32/Print.cpp.  
+static int debug_vprintf(const char *format, va_list ap) {
+
+    char loc_buf[64];
+    char * temp = loc_buf;
+    int len = vsnprintf(temp, sizeof(loc_buf), format, ap);
+
+    if(len < 0) {
+        return 0;
+    };
+    if(len >= (int)sizeof(loc_buf)){  
+        temp = (char*) malloc(len+1);
+        if(temp == NULL) {
+            return 0;
+        }
+        len = vsnprintf(temp, len+1, format, ap);
+    }
+    len = DebugConsole.write((uint8_t*)temp, len);
+    if(temp != loc_buf){
+        free(temp);
+    }
+    return len;
+}
+
+static void rx_task(void *arg) {
+
+  static const char *RX_TASK_TAG = "RX";
+  esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
+  uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE+1);
+  while (1) {
+      const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+      if (rxBytes > 0) {
+          data[rxBytes] = 0;
+          ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_ERROR);
+      }
+  }
+  free(data);
+}
+
+static void tx_task(void *arg) {
+
+  static const char *TX_TASK_TAG = "TX";
+  esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
+  uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE+1);
+  while (1) {
+      const int txBytes = uart_read_bytes(UART_NUM_2, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+      if (txBytes > 0) {
+          data[txBytes] = 0;
+          ESP_LOG_BUFFER_HEXDUMP(TX_TASK_TAG, data, txBytes, ESP_LOG_ERROR);
+      }
+  }
+  free(data);
+}
+
+
+// TODO: Automatically confirming pairing request for now.
+//       Replace with code to read "BOOT" pin button press.
+static void confirm_pin(void *arg) {
+
+  while (1) {
+    if (confirmRequestPending)
+    {
+        DebugConsole.confirmReply(true);
+        DebugConsole.println("Connected");
+        confirmRequestPending = false;
+    }
+    vTaskDelay(10);
+  }
+}
+
+
 void setup() {
+
+  pinMode(0, INPUT);
 
   setup_debug_console();
 
-  SniffRX.begin(9600, SERIAL_8N1, 34, 32, false, 11000UL);
+  // Configure ESP-IDF logger 
+  esp_log_set_vprintf(debug_vprintf);
+
+  SniffRX.begin(9600, SERIAL_8N1, 35, 33, false, 11000UL);
 
   DebugConsole.println("Initialized RX Line.");
 
@@ -44,51 +123,16 @@ void setup() {
   }
 
   DebugConsole.println("Initialized TX Line.");
-  SniffTX.begin(detectedBaudRate, SERIAL_8N1, 35, 33, false, 11000UL);
-}
+  SniffTX.begin(detectedBaudRate, SERIAL_8N1, 34, 32, false, 11000UL);
 
-int counter = 0;
+  // Arduino runs on core 1 by default
+  xTaskCreatePinnedToCore(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL, 0);
+  xTaskCreatePinnedToCore(tx_task, "uart_tx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL, 0);
+  // TODO: Check what the stack depth actually needs to be...
+  xTaskCreatePinnedToCore(confirm_pin, "confirm_pin", 1024*2, NULL, configMAX_PRIORITIES-1, NULL, 0);
+}
 
 void loop() {
 
-  // TODO: Automatically confirming pairing request for now.
-  //       Replace with code to read "BOOT" pin button press.
-  if (confirmRequestPending)
-  {
-      DebugConsole.confirmReply(true);
-      DebugConsole.println("Connected");
-      confirmRequestPending = false;
-  }
 
-  if (Serial.available())
-  {
-    DebugConsole.write(Serial.read());
-  }
-  if (DebugConsole.available())
-  {
-    Serial.write(DebugConsole.read());
-  }
-
-  if (SniffRX.peek() != -1) {      
-    // DebugConsole.write("-> ");
-    DebugConsole.printf("%09d -> ", counter);
-    while (SniffRX.available()) {      
-      // DebugConsole.print(SniffRX.read(), HEX);
-      DebugConsole.printf("%02x ", SniffRX.read());
-    }
-    DebugConsole.write('\n');
-  }
-
-  if (SniffTX.peek() != -1) {    
-    // DebugConsole.write("<- ");
-    DebugConsole.printf("%09d <- ", counter);
-    while (SniffTX.available()) {      
-      // DebugConsole.print(SniffTX.read(), HEX);
-      DebugConsole.printf("%02x ", SniffTX.read());
-    }
-    DebugConsole.write('\n');
-  }
-
-  delay(100);
-  counter++;
 }
