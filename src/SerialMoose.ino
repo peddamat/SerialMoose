@@ -1,5 +1,6 @@
-#include "Bluetooth.h"
 #include "driver/uart.h"
+#include "Bluetooth.h"
+#include "SimpleSerialShell.h"
 
 static const int RX_BUF_SIZE = 1024;
 
@@ -101,12 +102,30 @@ static void confirm_pin(void *arg) {
   }
 }
 
+int echo(int argc, char **argv)
+{
+    auto lastArg = argc - 1;
+    for ( int i = 1; i < argc; i++) {
+
+        shell.print(argv[i]);
+
+        if (i < lastArg)
+            shell.print(F(" "));
+    }
+    shell.println();
+
+    return EXIT_SUCCESS;
+}
+
 
 void setup() {
 
   pinMode(0, INPUT);
 
   setup_debug_console();
+
+  shell.attach(DebugConsole);
+  shell.addCommand(F("echo"), echo);
 
   // Configure ESP-IDF logger 
   esp_log_set_vprintf(debug_vprintf);
@@ -133,6 +152,6 @@ void setup() {
 }
 
 void loop() {
-
+  shell.executeIfInput();
 
 }
