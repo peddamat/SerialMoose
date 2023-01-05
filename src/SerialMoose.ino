@@ -117,6 +117,73 @@ int echo(int argc, char **argv)
     return EXIT_SUCCESS;
 }
 
+int badArgCount( char * cmdName )
+{
+    shell.print(cmdName);
+    shell.println(F(": bad arg count"));
+    return -1;
+}
+
+int setup_sniffer(int argc, char **argv) {
+
+  if (argc == 4)
+  {
+      int baud = atoi(argv[3]);
+
+      int pin = atoi(argv[1]);
+      if (pin < 0 || pin > (int) NUM_DIGITAL_PINS)
+      {
+          shell.print(F("Invalid RX pin: "));
+          shell.print(pin);
+          return -1;
+      }
+      SniffRX.begin(baud, SERIAL_8N1, pin, 33, false, 11000UL);
+      DebugConsole.println("Initialized RX Line.");
+
+      // Arduino runs on core 1 by default
+      xTaskCreatePinnedToCore(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL, 0);
+
+      pin = atoi(argv[2]);
+      if (pin < 0 || pin > (int) NUM_DIGITAL_PINS)
+      {
+          shell.print(F("Invalid TX pin: "));
+          shell.print(pin);
+          return -1;
+      }
+      SniffTX.begin(baud, SERIAL_8N1, pin, 32, false, 11000UL);
+      DebugConsole.println("Initialized TX Line.");
+
+      // Arduino runs on core 1 by default
+      xTaskCreatePinnedToCore(tx_task, "uart_tx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL, 0);
+
+      return EXIT_SUCCESS;
+  }
+
+  return badArgCount(argv[0]);
+}
+
+int detect_baud(int argc, char **argv) {
+
+  if (argc == 2)
+  {
+    int pin = atoi(argv[1]);
+
+    DebugConsole.printf("Detecting baud on: %i\n" + pin);
+    SniffRX.begin(0, SERIAL_8N1, pin, 33, false, 11000UL);
+
+    unsigned long detectedBaudRate = SniffRX.baudRate();
+    if (detectedBaudRate) {
+      DebugConsole.printf("- Detected baudrate is %lu\n", detectedBaudRate);
+    } else {
+      DebugConsole.println("- No baudrate detected, Serial1 will not work!");
+    }
+
+    return EXIT_SUCCESS;
+  }
+
+  return badArgCount(argv[0]);
+
+}
 
 void setup() {
 
@@ -125,28 +192,13 @@ void setup() {
   setup_debug_console();
 
   shell.attach(DebugConsole);
-  shell.addCommand(F("echo"), echo);
+  // shell.addCommand(F("echo"), echo);
+  shell.addCommand(F("setup rx_pin tx_pin baud_rate"), setup_sniffer);
+  shell.addCommand(F("detect_baud pin"), detect_baud);
 
   // Configure ESP-IDF logger 
   esp_log_set_vprintf(debug_vprintf);
 
-  SniffRX.begin(9600, SERIAL_8N1, 35, 33, false, 11000UL);
-
-  DebugConsole.println("Initialized RX Line.");
-
-  unsigned long detectedBaudRate = SniffRX.baudRate();
-  if (detectedBaudRate) {
-    DebugConsole.printf("Detected baudrate is %lu\n", detectedBaudRate);
-  } else {
-    DebugConsole.println("No baudrate detected, Serial1 will not work!");
-  }
-
-  DebugConsole.println("Initialized TX Line.");
-  SniffTX.begin(detectedBaudRate, SERIAL_8N1, 34, 32, false, 11000UL);
-
-  // Arduino runs on core 1 by default
-  xTaskCreatePinnedToCore(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL, 0);
-  xTaskCreatePinnedToCore(tx_task, "uart_tx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL, 0);
   // TODO: Check what the stack depth actually needs to be...
   xTaskCreatePinnedToCore(confirm_pin, "confirm_pin", 1024*2, NULL, configMAX_PRIORITIES-1, NULL, 0);
 }
