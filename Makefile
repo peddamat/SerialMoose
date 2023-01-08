@@ -3,7 +3,7 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := i2c_tools
+PROJECT_NAME := SerialMoose
 
 EXTRA_COMPONENT_DIRS = $(IDF_PATH)/examples/system/console/advanced/components
 

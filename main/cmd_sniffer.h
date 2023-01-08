@@ -1,4 +1,4 @@
-/* cmd_i2ctools.h
+/* cmd_sniffer.h
 
    This example code is in the Public Domain (or CC0 licensed, at your option.)
 
@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-void register_i2ctools(void);
+void register_sniffertools(void);
 
 #ifdef __cplusplus
 }
