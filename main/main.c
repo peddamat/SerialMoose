@@ -77,10 +77,6 @@ void app_main(void) {
     printf(" |             /| /`-----` /|                                 |\n");
     printf(" |             \\ \\        / |                                 |\n");
     printf(" |             |\\|\\      /| |\\                                |\n");
-    // printf(" |     _ __ ___   ___   ___  ___  ___                         |\n");
-    // printf(" |    | '_ ` _ \ / _ \ / _ \/ __|/ _ \                        |\n");
-    // printf(" |    | | | | | | (_) | (_) \__ \  __/                        |\n");
-    // printf(" |    |_| |_| |_|\___/ \___/|___/\___|                        |\n");
     printf(" |                                                            |\n");
     printf(" |  1. Try 'help', check all supported commands               |\n");
     printf(" |                                                            |\n");

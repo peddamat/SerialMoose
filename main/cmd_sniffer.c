@@ -22,26 +22,16 @@ static const char *TAG = "cmd_sniffer";
 // }
 
 #define READ_BUF_SIZE (1024)
-#define RX_LINE_CHANNEL 2
-#define TX_LINE_CHANNEL 3
+#define RX_LINE_CHANNEL 1
+#define TX_LINE_CHANNEL 2
 
-static void configure_sniffer_line(int channel, int rx_pin, int tx_pin, int baud_rate) {
-    /* Configure parameters of an UART driver,
-     * communication pins and install the driver */
-    uart_config_t uart_config = {
-        .baud_rate = baud_rate,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_APB,
-    };
+TaskHandle_t rxTaskHandle;
+TaskHandle_t txTaskHandle;
 
-    ESP_ERROR_CHECK(uart_driver_install(channel, READ_BUF_SIZE * 2, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(channel, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(channel, tx_pin, rx_pin,
-                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-}
+/******************************************************************************/
+// UART: Sniffer Async Tasks
+/******************************************************************************/
+
 static void sniff_rxpin_task(void *arg) {
     static const char *RX_TASK_TAG = "RX";
     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
@@ -71,15 +61,15 @@ static void sniff_txpin_task(void *arg) {
 }
 
 /******************************************************************************/
-/* Command: TX Passthrough                                                    */
+// Command: TX Passthrough
 /******************************************************************************/
 
 /******************************************************************************/
-/* Command: Generate Serial Data                                              */
+// Command: Generate Serial Data
 /******************************************************************************/
 
 /******************************************************************************/
-/* Command: Determine Baud Rate                                               */
+// Command: Determine Baud Rate
 /******************************************************************************/
 
 static struct {
@@ -104,14 +94,99 @@ static void register_determine_baud(void) {
 }
 
 /******************************************************************************/
-/* Command: Start Sniffing                                                             */
+// Command: Stop Sniffing
 /******************************************************************************/
 
-// xTaskCreate(sniff_rxpin_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
-// xTaskCreate(sniff_txpin_task, "uart_tx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
+static struct {
+    struct arg_end *end;
+} stop_args;
+
+static int do_stop_cmd(int argc, char **argv) {
+    int nerrors = arg_parse(argc, argv, (void **)&stop_args);
+    if (nerrors != 0) {
+        arg_print_errors(stderr, stop_args.end, argv[0]);
+        return 0;
+    }
+
+    // TODO: Ensure sniffer has been started...
+
+    printf("Stopping sniff!\n\n");
+    vTaskDelete(rxTaskHandle);
+    vTaskDelete(txTaskHandle);
+
+    return 0;
+}
+
+static void register_stop(void) {
+    stop_args.end = arg_end(3);
+    const esp_console_cmd_t stop_cmd = {
+        .command = "stop",
+        .help = "Stop sniffer lines",
+        .hint = NULL,
+        .func = &do_stop_cmd,
+        .argtable = &stop_args};
+    ESP_ERROR_CHECK(esp_console_cmd_register(&stop_cmd));
+}
 
 /******************************************************************************/
-/* Command: Setup                                                             */
+// Command: Start Sniffing
+/******************************************************************************/
+
+static struct {
+    struct arg_end *end;
+} start_args;
+
+static int do_start_cmd(int argc, char **argv) {
+    int nerrors = arg_parse(argc, argv, (void **)&start_args);
+    if (nerrors != 0) {
+        arg_print_errors(stderr, start_args.end, argv[0]);
+        return 0;
+    }
+
+    // TODO: Ensure sniffer lines are configured...
+
+    printf("Starting sniff!\n\n");
+    xTaskCreate(sniff_rxpin_task, "uart_rx_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &rxTaskHandle);
+    xTaskCreate(sniff_txpin_task, "uart_tx_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &txTaskHandle);
+
+    return 0;
+}
+
+static void register_start(void) {
+    start_args.end = arg_end(1);
+    const esp_console_cmd_t start_cmd = {
+        .command = "start",
+        .help = "Start sniffer lines",
+        .hint = NULL,
+        .func = &do_start_cmd,
+        .argtable = &start_args};
+    ESP_ERROR_CHECK(esp_console_cmd_register(&start_cmd));
+}
+
+/******************************************************************************/
+// UART: Setup
+/******************************************************************************/
+
+static void configure_sniffer_line(int channel, int rx_pin, int tx_pin, int baud_rate) {
+    uart_config_t uart_config = {
+        .baud_rate = baud_rate,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_APB,
+    };
+
+    ESP_ERROR_CHECK(uart_driver_install(channel, READ_BUF_SIZE * 2, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(channel, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(channel, tx_pin, rx_pin,
+                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+
+    printf("Line configured on pin %i @ %i\n", rx_pin, baud_rate);
+}
+
+/******************************************************************************/
+// Command: Setup Sniffer Lines
 /******************************************************************************/
 
 static struct {
@@ -128,12 +203,12 @@ static int do_setup_cmd(int argc, char **argv) {
         return 0;
     }
 
-    int rx_pin = setup_args.rx_pin;
-    int tx_pin = setup_args.tx_pin;
-    int baud = setup_args.baud;
+    int rx_pin = setup_args.rx_pin->ival[0];
+    int tx_pin = setup_args.tx_pin->ival[0];
+    int baud = setup_args.baud->ival[0];
 
-    configure_sniffer_line(RX_LINE_CHANNEL, rx_pin, 23, baud);
-    configure_sniffer_line(TX_LINE_CHANNEL, tx_pin, 25, baud);
+    configure_sniffer_line(RX_LINE_CHANNEL, rx_pin, 32, baud);
+    configure_sniffer_line(TX_LINE_CHANNEL, tx_pin, 33, baud);
 
     return 0;
 }
@@ -144,7 +219,7 @@ static void register_setup(void) {
     setup_args.baud = arg_int1("b", "baud", "<baud rate>", "Specify the baud rate");
     setup_args.end = arg_end(3);
     const esp_console_cmd_t setup_cmd = {
-        .command = "set",
+        .command = "setup",
         .help = "Setup sniffer lines",
         .hint = NULL,
         .func = &do_setup_cmd,
@@ -153,10 +228,14 @@ static void register_setup(void) {
 }
 
 /******************************************************************************/
-/* Register Commands                                                          */
+// Register Commands
 /******************************************************************************/
 
 void register_sniffertools(void) {
     register_setup();
+    register_start();
+    register_stop();
+    // Generate serial data
+    // TX passthrough
     register_determine_baud();
 }
