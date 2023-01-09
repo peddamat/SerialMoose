@@ -54,11 +54,24 @@ void app_main(void) {
     // register_system();
 
     printf("\n ==============================================================\n");
-    printf(" |             Welcome to SerialMoose!                        |\n");
+    printf(" |    Welcome to                                              |\n");
+    printf(" |     SerialMoose!     _       _                             |\n");
+    printf(" |                     ) \\     /_(                            |\n");
+    printf(" |                       )_`-)-_(_                            |\n");
+    printf(" |                        `,' `__,)                           |\n");
+    printf(" |                       _/   ((                              |\n");
+    printf(" |              ______,-'    )                                |\n");
+    printf(" |             (            ,                                 |\n");
+    printf(" |              \\  )    (   |                                 |\n");
+    printf(" |             /| /`-----` /|                                 |\n");
+    printf(" |             \\ \\        / |                                 |\n");
+    printf(" |             |\\|\\      /| |\\                                |\n");
+    // printf(" |     _ __ ___   ___   ___  ___  ___                         |\n");
+    // printf(" |    | '_ ` _ \ / _ \ / _ \/ __|/ _ \                        |\n");
+    // printf(" |    | | | | | | (_) | (_) \__ \  __/                        |\n");
+    // printf(" |    |_| |_| |_|\___/ \___/|___/\___|                        |\n");
     printf(" |                                                            |\n");
     printf(" |  1. Try 'help', check all supported commands               |\n");
-    printf(" |  2. Try 'i2cconfig' to configure your I2C bus              |\n");
-    printf(" |  3. Try 'i2cdetect' to scan devices on the bus             |\n");
     printf(" |                                                            |\n");
     printf(" ==============================================================\n\n");
 
