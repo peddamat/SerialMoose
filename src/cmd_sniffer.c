@@ -7,8 +7,11 @@
 #include "driver/uart.h"
 #include "esp_console.h"
 #include "esp_log.h"
+#include "esp_rom_gpio.h"
 #include "esp_vfs_fat.h"
+#include "main.h"
 #include "sdkconfig.h"
+#include "soc/uart_periph.h"
 
 static const char *TAG = "cmd_sniffer";
 
@@ -67,6 +70,50 @@ static void sniff_txpin_task(void *arg) {
 /******************************************************************************/
 // Command: Generate Serial Data
 /******************************************************************************/
+
+static void connect_uart_pins(int pin1, int pin2) {
+}
+
+static void connect_uarts(void) {
+    // connect the default uart RX pin to the console uart TX pin signal
+    esp_rom_gpio_connect_out_signal(DEFAULT_UART_RX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_TX_PIN_IDX), false, false);
+    // connect the default uart TX pin to the console uart RX pin signal
+    esp_rom_gpio_connect_in_signal(DEFAULT_UART_TX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_RX_PIN_IDX), false);
+
+    // connect the default uart TX pin to the default uart TX pin signal
+    esp_rom_gpio_connect_out_signal(DEFAULT_UART_TX_PIN, UART_PERIPH_SIGNAL(0, SOC_UART_TX_PIN_IDX), false, false);
+    // connect the default uart RX pin to the default uart RX pin signal
+    esp_rom_gpio_connect_in_signal(DEFAULT_UART_RX_PIN, UART_PERIPH_SIGNAL(0, SOC_UART_RX_PIN_IDX), false);
+}
+
+static void disconnect_uarts(void) {
+    // connect the console uart TX pin to the console uart TX pin signal
+    esp_rom_gpio_connect_out_signal(CONSOLE_UART_TX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_TX_PIN_IDX), false, false);
+    // connect the console uart RX pin to the console uart RX pin signal
+    esp_rom_gpio_connect_in_signal(CONSOLE_UART_RX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_RX_PIN_IDX), false);
+}
+
+static struct {
+    struct arg_int *pin;
+    struct arg_end *end;
+} gen_traffic_args;
+
+static int do_generate_traffic_cmd(int argc, char **argv) {
+    connect_uarts();
+    return 0;
+}
+
+static void register_gen_traffic_cmd(void) {
+    gen_traffic_args.pin = arg_int1("p", "pin", "<pin>", "Specify the pin to generate traffic on");
+    gen_traffic_args.end = arg_end(3);
+    const esp_console_cmd_t gen_traffic_cmd = {
+        .command = "gen",
+        .help = "Generate fake traffic",
+        .hint = NULL,
+        .func = &do_generate_traffic_cmd,
+        .argtable = &gen_traffic_args};
+    ESP_ERROR_CHECK(esp_console_cmd_register(&gen_traffic_cmd));
+}
 
 /******************************************************************************/
 // Command: Determine Baud Rate
@@ -236,6 +283,7 @@ void register_sniffertools(void) {
     register_start();
     register_stop();
     // Generate serial data
+    register_gen_traffic_cmd();
     // TX passthrough
     register_determine_baud();
 }
