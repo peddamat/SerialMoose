@@ -1,8 +1,14 @@
+#include "cmd_sniffer.h"
+
 #include <stdio.h>
+#include <string.h>
 
 #include "argtable3/argtable3.h"
+#include "driver/uart.h"
 #include "esp_console.h"
 #include "esp_log.h"
+#include "esp_vfs_fat.h"
+#include "sdkconfig.h"
 
 static const char *TAG = "cmd_sniffer";
 
@@ -14,6 +20,55 @@ static const char *TAG = "cmd_sniffer";
 //     *i2c_port = port;
 //     return ESP_OK;
 // }
+
+#define READ_BUF_SIZE (1024)
+#define RX_LINE_CHANNEL 2
+#define TX_LINE_CHANNEL 3
+
+static void configure_sniffer_line(int channel, int rx_pin, int tx_pin, int baud_rate) {
+    /* Configure parameters of an UART driver,
+     * communication pins and install the driver */
+    uart_config_t uart_config = {
+        .baud_rate = baud_rate,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_APB,
+    };
+
+    ESP_ERROR_CHECK(uart_driver_install(channel, READ_BUF_SIZE * 2, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(channel, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(channel, tx_pin, rx_pin,
+                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+}
+static void sniff_rxpin_task(void *arg) {
+    static const char *RX_TASK_TAG = "RX";
+    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
+    uint8_t *data = (uint8_t *)malloc(READ_BUF_SIZE + 1);
+    while (1) {
+        const int rxBytes = uart_read_bytes(UART_NUM_1, data, READ_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+        if (rxBytes > 0) {
+            data[rxBytes] = 0;
+            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_ERROR);
+        }
+    }
+    free(data);
+}
+
+static void sniff_txpin_task(void *arg) {
+    static const char *TX_TASK_TAG = "TX";
+    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
+    uint8_t *data = (uint8_t *)malloc(READ_BUF_SIZE + 1);
+    while (1) {
+        const int txBytes = uart_read_bytes(UART_NUM_2, data, READ_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+        if (txBytes > 0) {
+            data[txBytes] = 0;
+            ESP_LOG_BUFFER_HEXDUMP(TX_TASK_TAG, data, txBytes, ESP_LOG_ERROR);
+        }
+    }
+    free(data);
+}
 
 /******************************************************************************/
 /* Command: TX Passthrough                                                    */
@@ -49,6 +104,13 @@ static void register_determine_baud(void) {
 }
 
 /******************************************************************************/
+/* Command: Start Sniffing                                                             */
+/******************************************************************************/
+
+// xTaskCreate(sniff_rxpin_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
+// xTaskCreate(sniff_txpin_task, "uart_tx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
+
+/******************************************************************************/
 /* Command: Setup                                                             */
 /******************************************************************************/
 
@@ -66,10 +128,12 @@ static int do_setup_cmd(int argc, char **argv) {
         return 0;
     }
 
-    /* Check chip address: "-c" option */
-    // int chip_addr = i2cset_args.chip_address->ival[0];
-    /* Check register address: "-r" option */
-    // int data_addr = 0;
+    int rx_pin = setup_args.rx_pin;
+    int tx_pin = setup_args.tx_pin;
+    int baud = setup_args.baud;
+
+    configure_sniffer_line(RX_LINE_CHANNEL, rx_pin, 23, baud);
+    configure_sniffer_line(TX_LINE_CHANNEL, tx_pin, 25, baud);
 
     return 0;
 }

@@ -2,7 +2,7 @@
 #include <string.h>
 
 #include "cmd_sniffer.h"
-#include "cmd_system.h"
+#include "driver/uart.h"
 #include "esp_console.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
@@ -28,6 +28,17 @@ static void initialize_filesystem(void) {
 }
 #endif  // CONFIG_EXAMPLE_STORE_HISTORY
 
+#define DEFAULT_UART_CHANNEL (0)
+#define CONSOLE_UART_CHANNEL (1 - DEFAULT_UART_CHANNEL)
+#define DEFAULT_UART_RX_PIN (3)
+#define DEFAULT_UART_TX_PIN (2)
+#define CONSOLE_UART_RX_PIN (4)
+#define CONSOLE_UART_TX_PIN (5)
+
+#define UARTS_BAUD_RATE (115200)
+#define TASK_STACK_SIZE (2048)
+#define READ_BUF_SIZE (1024)
+
 void app_main(void) {
     esp_console_repl_t *repl = NULL;
     esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
@@ -36,7 +47,7 @@ void app_main(void) {
     initialize_filesystem();
     repl_config.history_save_path = HISTORY_PATH;
 #endif
-    repl_config.prompt = "moose>";
+    repl_config.prompt = "moose >";
 
     // install console REPL environment
 #if CONFIG_ESP_CONSOLE_UART
