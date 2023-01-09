@@ -1,12 +1,3 @@
-/* i2c-tools example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <stdio.h>
 #include <string.h>
 
@@ -60,7 +51,7 @@ void app_main(void) {
 #endif
 
     register_sniffertools();
-    register_system();
+    // register_system();
 
     printf("\n ==============================================================\n");
     printf(" |             Welcome to SerialMoose!                        |\n");
@@ -68,9 +59,6 @@ void app_main(void) {
     printf(" |  1. Try 'help', check all supported commands               |\n");
     printf(" |  2. Try 'i2cconfig' to configure your I2C bus              |\n");
     printf(" |  3. Try 'i2cdetect' to scan devices on the bus             |\n");
-    printf(" |  4. Try 'i2cget' to get the content of specific register   |\n");
-    printf(" |  5. Try 'i2cset' to set the value of specific register     |\n");
-    printf(" |  6. Try 'i2cdump' to dump all the register (Experiment)    |\n");
     printf(" |                                                            |\n");
     printf(" ==============================================================\n\n");
 
