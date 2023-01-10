@@ -16,7 +16,7 @@
 #include "soc/uart_periph.h"
 
 static const char *TAG = "cmd_sniffer";
-static void configure_sniffer_line(int channel, int rx_pin, int tx_pin, int baud_rate);
+static void configure_sniffer_line(int channel, int rx_pin, int tx_pin, int baud_rate, bool verbose);
 
 // static esp_err_t i2c_get_port(int port, i2c_port_t *i2c_port) {
 //     if (port >= I2C_NUM_MAX) {
@@ -195,14 +195,14 @@ static int do_generate_traffic_cmd(int argc, char **argv) {
 
     // Configure Probe 1 TX pin and start task
     int pin1 = gen_traffic_args.pin->ival[0];
-    configure_sniffer_line(PROBE1_UART_CHANNEL, pin1, UART_PIN_NO_CHANGE, baud1);
+    configure_sniffer_line(PROBE1_UART_CHANNEL, pin1, UART_PIN_NO_CHANGE, baud1, true);
     xTaskCreate(probe1_txpin_task, "probe1_txpin_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &Probe1TxTaskHandle);
 
     if (len == 2) {
         // Configure Probe 2 TX pin and start task
         int pin2 = gen_traffic_args.pin->ival[1];
 
-        configure_sniffer_line(PROBE2_UART_CHANNEL, pin2, UART_PIN_NO_CHANGE, baud2);
+        configure_sniffer_line(PROBE2_UART_CHANNEL, pin2, UART_PIN_NO_CHANGE, baud2, true);
         xTaskCreate(probe2_txpin_task, "probe2_txpin_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &Probe2TxTaskHandle);
     }
 
@@ -210,13 +210,13 @@ static int do_generate_traffic_cmd(int argc, char **argv) {
     return 0;
 }
 
-static void register_gen_traffic_cmd(void) {
+static void register_dummy_data_cmd(void) {
     gen_traffic_args.pin = arg_intn("p", "pin", "<pin>", 1, 2, "Specify the pin(s) to generate traffic on");
     gen_traffic_args.baud = arg_int0("b", "baud", "<baud rate>", "Specify the baud rate");
     gen_traffic_args.end = arg_end(3);
     const esp_console_cmd_t gen_traffic_cmd = {
         .command = "gen",
-        .help = "Generate fake traffic",
+        .help = "Generate dummy data on specified pin",
         .hint = NULL,
         .func = &do_generate_traffic_cmd,
         .argtable = &gen_traffic_args};
@@ -314,7 +314,7 @@ static int do_determine_baud_cmd(int argc, char **argv) {
 
     int pin = det_baud_args.pin->ival[0];
     if (!uart_is_driver_installed(PROBE1_UART_CHANNEL)) {
-        configure_sniffer_line(PROBE1_UART_CHANNEL, UART_PIN_NO_CHANGE, pin, UARTS_BAUD_RATE);
+        configure_sniffer_line(PROBE1_UART_CHANNEL, UART_PIN_NO_CHANGE, pin, UARTS_BAUD_RATE, true);
     } else {
         ESP_ERROR_CHECK(uart_set_pin(PROBE1_UART_CHANNEL, UART_PIN_NO_CHANGE, pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     }
@@ -332,7 +332,7 @@ static int do_determine_baud_cmd(int argc, char **argv) {
     return 0;
 }
 
-static void register_determine_baud(void) {
+static void register_detect_baud(void) {
     det_baud_args.pin = arg_int1("p", "pin", "<pin>", "Specify the pin to detect baud on");
     det_baud_args.raw = arg_lit0("r", "raw", "Output raw baud rate");
     det_baud_args.end = arg_end(3);
@@ -439,7 +439,7 @@ static void register_start(void) {
 // UART: Setup
 /******************************************************************************/
 
-static void configure_sniffer_line(int channel, int tx_pin, int rx_pin, int baud_rate) {
+static void configure_sniffer_line(int channel, int tx_pin, int rx_pin, int baud_rate, bool verbose) {
     uart_config_t uart_config = {
         .baud_rate = baud_rate,
         .data_bits = UART_DATA_8_BITS,
@@ -456,11 +456,13 @@ static void configure_sniffer_line(int channel, int tx_pin, int rx_pin, int baud
     ESP_ERROR_CHECK(uart_set_pin(channel, tx_pin, rx_pin,
                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-    if (tx_pin != -1) {
-        printf("Configured probe %i generator on pin %i @ %i baud\n", channel, tx_pin, baud_rate);
-    }
-    if (rx_pin != -1) {
-        printf("Configured probe %i sniffer on pin %i @ %i baud\n", channel, rx_pin, baud_rate);
+    if (verbose) {
+        if (tx_pin != -1) {
+            printf("Configured probe %i generator on pin %i @ %i baud\n", channel, tx_pin, baud_rate);
+        }
+        if (rx_pin != -1) {
+            printf("Configured probe %i sniffer on pin %i @ %i baud\n", channel, rx_pin, baud_rate);
+        }
     }
 }
 
@@ -482,30 +484,63 @@ static int do_setup_cmd(int argc, char **argv) {
         return 0;
     }
 
+    // Setup Probe 1
     int p1_pin = setup_args.p1_pin->ival[0];
-    int baud = setup_args.baud->ival[0];
+    int baud1 = -1;
 
-    configure_sniffer_line(PROBE1_UART_CHANNEL, UART_PIN_NO_CHANGE, p1_pin, baud);
-
-    if (setup_args.p2_pin->count == 1) {
-        int p2_pin = setup_args.p2_pin->ival[0];
-
-        // If only one baud rate was provided, reuse it
-        if (setup_args.baud->count == 1) {
-            configure_sniffer_line(PROBE2_UART_CHANNEL, UART_PIN_NO_CHANGE, p2_pin, baud);
-        } else {
-            int baud2 = setup_args.baud->ival[1];
-            configure_sniffer_line(PROBE2_UART_CHANNEL, UART_PIN_NO_CHANGE, p2_pin, baud2);
+    // If a baud rate was provided, use it...
+    if (setup_args.baud->count >= 1) {
+        baud1 = setup_args.baud->ival[0];
+    }
+    // ... otherwise try to detect it...
+    else if (setup_args.baud->count == 0) {
+        // Try to autodetect baud rate
+        configure_sniffer_line(PROBE1_UART_CHANNEL, UART_PIN_NO_CHANGE, p1_pin, 9600, false);
+        baud1 = detect_baud_rate(PROBE1_UART_CHANNEL, true, 2000 / portTICK_PERIOD_MS);
+        if (baud1 == 0) {
+            printf("- Unable to detect baudrate on pin %i!  Defaulting to %i\n", p1_pin, UARTS_BAUD_RATE);
+            baud1 = UARTS_BAUD_RATE;
         }
     }
+
+    configure_sniffer_line(PROBE1_UART_CHANNEL, UART_PIN_NO_CHANGE, p1_pin, baud1, true);
+
+    // Setup Probe 2
+    if (setup_args.p2_pin->count == 0) {
+        return 0;
+    }
+
+    int p2_pin = setup_args.p2_pin->ival[0];
+    int baud2 = -1;
+
+    // If a baud rate was provided, use it...
+    if (setup_args.baud->count == 2) {
+        baud2 = setup_args.baud->ival[1];
+    }
+    // ... if only one was provided, use it...
+    else if (setup_args.baud->count == 1) {
+        baud2 = setup_args.baud->ival[0];
+    }
+    // ... otherwise try to detect it...
+    else if (setup_args.baud->count == 0) {
+        // Try to autodetect baud rate
+        configure_sniffer_line(PROBE2_UART_CHANNEL, UART_PIN_NO_CHANGE, p2_pin, 9600, false);
+        baud2 = detect_baud_rate(PROBE2_UART_CHANNEL, true, 2000 / portTICK_PERIOD_MS);
+        if (baud2 == 0) {
+            printf("- Unable to detect baudrate on pin %i!  Defaulting to %i\n", p2_pin, UARTS_BAUD_RATE);
+            baud2 = UARTS_BAUD_RATE;
+        }
+    }
+
+    configure_sniffer_line(PROBE2_UART_CHANNEL, UART_PIN_NO_CHANGE, p2_pin, baud2, true);
 
     return 0;
 }
 
 static void register_setup(void) {
     setup_args.p1_pin = arg_int1("1", "probe1", "<p1 pin>", "Specify the Probe 1 pin");
-    setup_args.p2_pin = arg_int1("2", "probe2", "<p2 pin>", "Specify the Probe 2 pin");
-    setup_args.baud = arg_intn("b", "baud", "<baud rate>", 1, 2, "Specify the baud rate");
+    setup_args.p2_pin = arg_int0("2", "probe2", "<p2 pin>", "Specify the Probe 2 pin");
+    setup_args.baud = arg_intn("b", "baud", "<baud rate>", 0, 2, "Specify the baud rate");
     setup_args.end = arg_end(3);
     const esp_console_cmd_t setup_cmd = {
         .command = "setup",
@@ -524,10 +559,9 @@ void register_sniffertools(void) {
     register_setup();
     register_start();
     register_stop();
-    // Generate serial data
-    register_gen_traffic_cmd();
+    register_detect_baud();
+    register_dummy_data_cmd();
     register_connect_cmd();
     register_disconnect_cmd();
-    // TX passthrough
-    register_determine_baud();
+    // register_passthrough_cmd();
 }
