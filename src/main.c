@@ -12,6 +12,8 @@
 
 static const char *TAG = "main";
 
+#define CONFIG_EXAMPLE_STORE_HISTORY 1
+
 #if CONFIG_EXAMPLE_STORE_HISTORY
 
 #define MOUNT_PATH "/data"
