@@ -14,6 +14,7 @@
 #include "soc/uart_periph.h"
 
 static const char *TAG = "cmd_sniffer";
+static void configure_sniffer_line(int channel, int rx_pin, int tx_pin, int baud_rate);
 
 // static esp_err_t i2c_get_port(int port, i2c_port_t *i2c_port) {
 //     if (port >= I2C_NUM_MAX) {
@@ -25,22 +26,22 @@ static const char *TAG = "cmd_sniffer";
 // }
 
 #define READ_BUF_SIZE (1024)
-#define RX_LINE_CHANNEL 1
-#define TX_LINE_CHANNEL 2
 
-TaskHandle_t rxTaskHandle;
-TaskHandle_t txTaskHandle;
+TaskHandle_t Probe1RxTaskHandle;
+TaskHandle_t Probe2RxTaskHandle;
+TaskHandle_t Probe1TxTaskHandle;
+TaskHandle_t Probe2TxTaskHandle;
 
 /******************************************************************************/
 // UART: Sniffer Async Tasks
 /******************************************************************************/
 
-static void sniff_rxpin_task(void *arg) {
+static void probe1_rxpin_task(void *arg) {
     static const char *RX_TASK_TAG = "RX";
     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
     uint8_t *data = (uint8_t *)malloc(READ_BUF_SIZE + 1);
     while (1) {
-        const int rxBytes = uart_read_bytes(UART_NUM_1, data, READ_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+        const int rxBytes = uart_read_bytes(PROBE1_UART_CHANNEL, data, READ_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
         if (rxBytes > 0) {
             data[rxBytes] = 0;
             ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_ERROR);
@@ -49,12 +50,12 @@ static void sniff_rxpin_task(void *arg) {
     free(data);
 }
 
-static void sniff_txpin_task(void *arg) {
+static void probe2_rxpin_task(void *arg) {
     static const char *TX_TASK_TAG = "TX";
     esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
     uint8_t *data = (uint8_t *)malloc(READ_BUF_SIZE + 1);
     while (1) {
-        const int txBytes = uart_read_bytes(UART_NUM_2, data, READ_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+        const int txBytes = uart_read_bytes(PROBE2_UART_CHANNEL, data, READ_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
         if (txBytes > 0) {
             data[txBytes] = 0;
             ESP_LOG_BUFFER_HEXDUMP(TX_TASK_TAG, data, txBytes, ESP_LOG_ERROR);
@@ -71,26 +72,33 @@ static void sniff_txpin_task(void *arg) {
 // Command: Generate Serial Data
 /******************************************************************************/
 
-static void connect_uart_pins(int pin1, int pin2) {
-}
+// static void connect_uarts_old(void) {
+//     // connect the default uart RX pin to the console uart TX pin signal
+//     esp_rom_gpio_connect_out_signal(DEFAULT_UART_RX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_TX_PIN_IDX), false, false);
+//     // connect the default uart TX pin to the console uart RX pin signal
+//     esp_rom_gpio_connect_in_signal(DEFAULT_UART_TX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_RX_PIN_IDX), false);
 
-static void connect_uarts(void) {
-    // connect the default uart RX pin to the console uart TX pin signal
-    esp_rom_gpio_connect_out_signal(DEFAULT_UART_RX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_TX_PIN_IDX), false, false);
-    // connect the default uart TX pin to the console uart RX pin signal
-    esp_rom_gpio_connect_in_signal(DEFAULT_UART_TX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_RX_PIN_IDX), false);
+//     // connect the default uart TX pin to the default uart TX pin signal
+//     esp_rom_gpio_connect_out_signal(DEFAULT_UART_TX_PIN, UART_PERIPH_SIGNAL(0, SOC_UART_TX_PIN_IDX), false, false);
+//     // connect the default uart RX pin to the default uart RX pin signal
+//     esp_rom_gpio_connect_in_signal(DEFAULT_UART_RX_PIN, UART_PERIPH_SIGNAL(0, SOC_UART_RX_PIN_IDX), false);
+// }
 
-    // connect the default uart TX pin to the default uart TX pin signal
-    esp_rom_gpio_connect_out_signal(DEFAULT_UART_TX_PIN, UART_PERIPH_SIGNAL(0, SOC_UART_TX_PIN_IDX), false, false);
-    // connect the default uart RX pin to the default uart RX pin signal
-    esp_rom_gpio_connect_in_signal(DEFAULT_UART_RX_PIN, UART_PERIPH_SIGNAL(0, SOC_UART_RX_PIN_IDX), false);
-}
+// static void disconnect_uarts(void) {
+//     // connect the console uart TX pin to the console uart TX pin signal
+//     esp_rom_gpio_connect_out_signal(CONSOLE_UART_TX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_TX_PIN_IDX), false, false);
+//     // connect the console uart RX pin to the console uart RX pin signal
+//     esp_rom_gpio_connect_in_signal(CONSOLE_UART_RX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_RX_PIN_IDX), false);
+// }
 
-static void disconnect_uarts(void) {
-    // connect the console uart TX pin to the console uart TX pin signal
-    esp_rom_gpio_connect_out_signal(CONSOLE_UART_TX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_TX_PIN_IDX), false, false);
-    // connect the console uart RX pin to the console uart RX pin signal
-    esp_rom_gpio_connect_in_signal(CONSOLE_UART_RX_PIN, UART_PERIPH_SIGNAL(1, SOC_UART_RX_PIN_IDX), false);
+static void probe1_txpin_task(void *arg) {
+    static const char *TX_TASK_TAG = "TX_TASK";
+    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
+    while (1) {
+        uart_write_bytes(PROBE1_UART_CHANNEL, "helloworld", strlen("helloworld"));
+        // sendData(TX_TASK_TAG, "Hello world");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
 }
 
 static struct {
@@ -99,12 +107,30 @@ static struct {
 } gen_traffic_args;
 
 static int do_generate_traffic_cmd(int argc, char **argv) {
-    connect_uarts();
+    int nerrors = arg_parse(argc, argv, (void **)&gen_traffic_args);
+    if (nerrors != 0) {
+        arg_print_errors(stderr, gen_traffic_args.end, argv[0]);
+        return 0;
+    }
+
+    int len = gen_traffic_args.pin->count;
+
+    if (len == 1) {
+        int pin = gen_traffic_args.pin->ival[0];
+
+        // Configure Probe 1 TX pin
+        // configure_sniffer_line(PROBE1_UART_CHANNEL, PROBE1_UART_RX_PIN, pin, UARTS_BAUD_RATE);
+        ESP_ERROR_CHECK(uart_set_pin(PROBE1_UART_CHANNEL, pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+
+        // Start Probe 1 TX task
+        xTaskCreate(probe1_txpin_task, "probe1_txpin_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &Probe1TxTaskHandle);
+    }
+    // connect_uarts();
     return 0;
 }
 
 static void register_gen_traffic_cmd(void) {
-    gen_traffic_args.pin = arg_int1("p", "pin", "<pin>", "Specify the pin to generate traffic on");
+    gen_traffic_args.pin = arg_intn("p", "pin", "<pin>", 1, 2, "Specify the pin(s) to generate traffic on");
     gen_traffic_args.end = arg_end(3);
     const esp_console_cmd_t gen_traffic_cmd = {
         .command = "gen",
@@ -158,8 +184,9 @@ static int do_stop_cmd(int argc, char **argv) {
     // TODO: Ensure sniffer has been started...
 
     printf("Stopping sniff!\n\n");
-    vTaskDelete(rxTaskHandle);
-    vTaskDelete(txTaskHandle);
+    vTaskDelete(Probe1RxTaskHandle);
+    vTaskDelete(Probe2RxTaskHandle);
+    vTaskDelete(Probe1TxTaskHandle);
 
     return 0;
 }
@@ -193,8 +220,8 @@ static int do_start_cmd(int argc, char **argv) {
     // TODO: Ensure sniffer lines are configured...
 
     printf("Starting sniff!\n\n");
-    xTaskCreate(sniff_rxpin_task, "uart_rx_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &rxTaskHandle);
-    xTaskCreate(sniff_txpin_task, "uart_tx_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &txTaskHandle);
+    xTaskCreate(probe1_rxpin_task, "uart_rx_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &Probe1RxTaskHandle);
+    xTaskCreate(probe2_rxpin_task, "uart_tx_task", 1024 * 4, NULL, configMAX_PRIORITIES - 1, &Probe2RxTaskHandle);
 
     return 0;
 }
@@ -237,8 +264,8 @@ static void configure_sniffer_line(int channel, int rx_pin, int tx_pin, int baud
 /******************************************************************************/
 
 static struct {
-    struct arg_int *rx_pin;
-    struct arg_int *tx_pin;
+    struct arg_int *p1_pin;
+    struct arg_int *p2_pin;
     struct arg_int *baud;
     struct arg_end *end;
 } setup_args;
@@ -250,19 +277,19 @@ static int do_setup_cmd(int argc, char **argv) {
         return 0;
     }
 
-    int rx_pin = setup_args.rx_pin->ival[0];
-    int tx_pin = setup_args.tx_pin->ival[0];
+    int p1_pin = setup_args.p1_pin->ival[0];
+    int p2_pin = setup_args.p2_pin->ival[0];
     int baud = setup_args.baud->ival[0];
 
-    configure_sniffer_line(RX_LINE_CHANNEL, rx_pin, 32, baud);
-    configure_sniffer_line(TX_LINE_CHANNEL, tx_pin, 33, baud);
+    configure_sniffer_line(PROBE1_UART_CHANNEL, p1_pin, UART_PIN_NO_CHANGE, baud);
+    configure_sniffer_line(PROBE2_UART_CHANNEL, p2_pin, UART_PIN_NO_CHANGE, baud);
 
     return 0;
 }
 
 static void register_setup(void) {
-    setup_args.rx_pin = arg_int1("r", "rx", "<rx pin>", "Specify the 'RX' pin");
-    setup_args.tx_pin = arg_int1("t", "rx", "<tx pin>", "Specify the 'TX' pin");
+    setup_args.p1_pin = arg_int1("r", "p1", "<p1 pin>", "Specify the Probe 1 pin");
+    setup_args.p2_pin = arg_int1("t", "p2", "<p2 pin>", "Specify the Probe 2 pin");
     setup_args.baud = arg_int1("b", "baud", "<baud rate>", "Specify the baud rate");
     setup_args.end = arg_end(3);
     const esp_console_cmd_t setup_cmd = {
