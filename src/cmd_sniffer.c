@@ -10,6 +10,7 @@
 #include "esp_rom_gpio.h"
 #include "esp_vfs_fat.h"
 #include "hal/uart_ll.h"
+#include "hexdump.h"
 #include "main.h"
 #include "sdkconfig.h"
 #include "soc/rtc.h"
@@ -39,28 +40,30 @@ TaskHandle_t Probe2TxTaskHandle;
 /******************************************************************************/
 
 static void probe1_rxpin_task(void *arg) {
-    static const char *RX_TASK_TAG = "RX";
-    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
     uint8_t *data = (uint8_t *)malloc(READ_BUF_SIZE + 1);
+
+    uart_flush(PROBE1_UART_CHANNEL);
     while (1) {
         const int rxBytes = uart_read_bytes(PROBE1_UART_CHANNEL, data, READ_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
         if (rxBytes > 0) {
             data[rxBytes] = 0;
-            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_ERROR);
+            // ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_ERROR);
+            hexdump("P1", data, rxBytes);
         }
     }
     free(data);
 }
 
 static void probe2_rxpin_task(void *arg) {
-    static const char *TX_TASK_TAG = "TX";
-    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
     uint8_t *data = (uint8_t *)malloc(READ_BUF_SIZE + 1);
+
+    uart_flush(PROBE2_UART_CHANNEL);
     while (1) {
         const int txBytes = uart_read_bytes(PROBE2_UART_CHANNEL, data, READ_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
         if (txBytes > 0) {
             data[txBytes] = 0;
-            ESP_LOG_BUFFER_HEXDUMP(TX_TASK_TAG, data, txBytes, ESP_LOG_ERROR);
+            // ESP_LOG_BUFFER_HEXDUMP(TX_TASK_TAG, data, txBytes, ESP_LOG_ERROR);
+            hexdump("P2", data, txBytes);
         }
     }
     free(data);
@@ -363,22 +366,22 @@ static int do_stop_cmd(int argc, char **argv) {
     if (Probe1RxTaskHandle != NULL) {
         vTaskDelete(Probe1RxTaskHandle);
         Probe1RxTaskHandle = NULL;
-        printf("Stopped Probe 1 Generator\n");
+        printf("Stopped Probe 1 Sniffer\n");
     }
     if (Probe2RxTaskHandle != NULL) {
         vTaskDelete(Probe2RxTaskHandle);
         Probe2RxTaskHandle = NULL;
-        printf("Stopped Probe 2 Generator\n");
+        printf("Stopped Probe 2 Sniffer\n");
     }
     if (Probe1TxTaskHandle != NULL) {
         vTaskDelete(Probe1TxTaskHandle);
         Probe1TxTaskHandle = NULL;
-        printf("Stopped Probe 1 Sniffer\n");
+        printf("Stopped Probe 1 Generator\n");
     }
     if (Probe2TxTaskHandle != NULL) {
         vTaskDelete(Probe2TxTaskHandle);
         Probe2TxTaskHandle = NULL;
-        printf("Stopped Probe 2 Sniffer\n");
+        printf("Stopped Probe 2 Generator\n");
     }
 
     return 0;
@@ -486,21 +489,38 @@ static int do_setup_cmd(int argc, char **argv) {
 
     // Setup Probe 1
     int p1_pin = setup_args.p1_pin->ival[0];
-    int baud1 = -1;
+    int p2_pin = setup_args.p2_pin->ival[0];
+    int baud1 = 0;
+    int baud2 = 0;
 
-    // If a baud rate was provided, use it...
-    if (setup_args.baud->count >= 1) {
-        baud1 = setup_args.baud->ival[0];
-    }
-    // ... otherwise try to detect it...
-    else if (setup_args.baud->count == 0) {
+    // First figure out baud rates
+    if (setup_args.baud->count == 0) {
         // Try to autodetect baud rate
+        printf("Attempting to detect baud rate(s)...\n");
+
         configure_sniffer_line(PROBE1_UART_CHANNEL, UART_PIN_NO_CHANGE, p1_pin, 9600, false);
         baud1 = detect_baud_rate(PROBE1_UART_CHANNEL, true, 2000 / portTICK_PERIOD_MS);
-        if (baud1 == 0) {
-            printf("- Unable to detect baudrate on pin %i!  Defaulting to %i\n", p1_pin, UARTS_BAUD_RATE);
-            baud1 = UARTS_BAUD_RATE;
+        printf("- Detected baudrate on %i: %i\n", p1_pin, baud1);
+
+        if (setup_args.p2_pin->count != 0) {
+            configure_sniffer_line(PROBE2_UART_CHANNEL, UART_PIN_NO_CHANGE, p2_pin, 9600, false);
+            baud2 = detect_baud_rate(PROBE2_UART_CHANNEL, true, 2000 / portTICK_PERIOD_MS);
+            printf("- Detected baudrate on %i: %i\n", p2_pin, baud2);
         }
+
+        if ((baud1 == 0) && (baud2 == 0)) {
+            printf("- Unable to detect baudrate!  Defaulting to %i\n", UARTS_BAUD_RATE);
+            baud1 = baud2 = UARTS_BAUD_RATE;
+        } else if (baud1 == 0) {
+            baud1 = baud2;
+        } else if (baud2 == 0) {
+            baud2 = baud1;
+        }
+    } else if (setup_args.baud->count == 1) {
+        baud1 = setup_args.baud->ival[0];
+    } else if (setup_args.baud->count == 2) {
+        baud1 = setup_args.baud->ival[0];
+        baud2 = setup_args.baud->ival[1];
     }
 
     configure_sniffer_line(PROBE1_UART_CHANNEL, UART_PIN_NO_CHANGE, p1_pin, baud1, true);
@@ -508,28 +528,6 @@ static int do_setup_cmd(int argc, char **argv) {
     // Setup Probe 2
     if (setup_args.p2_pin->count == 0) {
         return 0;
-    }
-
-    int p2_pin = setup_args.p2_pin->ival[0];
-    int baud2 = -1;
-
-    // If a baud rate was provided, use it...
-    if (setup_args.baud->count == 2) {
-        baud2 = setup_args.baud->ival[1];
-    }
-    // ... if only one was provided, use it...
-    else if (setup_args.baud->count == 1) {
-        baud2 = setup_args.baud->ival[0];
-    }
-    // ... otherwise try to detect it...
-    else if (setup_args.baud->count == 0) {
-        // Try to autodetect baud rate
-        configure_sniffer_line(PROBE2_UART_CHANNEL, UART_PIN_NO_CHANGE, p2_pin, 9600, false);
-        baud2 = detect_baud_rate(PROBE2_UART_CHANNEL, true, 2000 / portTICK_PERIOD_MS);
-        if (baud2 == 0) {
-            printf("- Unable to detect baudrate on pin %i!  Defaulting to %i\n", p2_pin, UARTS_BAUD_RATE);
-            baud2 = UARTS_BAUD_RATE;
-        }
     }
 
     configure_sniffer_line(PROBE2_UART_CHANNEL, UART_PIN_NO_CHANGE, p2_pin, baud2, true);
